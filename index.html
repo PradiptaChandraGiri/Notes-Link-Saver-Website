@@ -15,6 +15,23 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Firebase compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Notes Link Saver — PWA</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Theme color (will be updated by JS) -->
+  <meta name="theme-color" content="#4f46e5" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
@@ -702,3 +719,691 @@
   </script>
 </body>
 </html>
+
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* small scrollbar style */
+    body::-webkit-scrollbar { width: 8px; }
+    /* fallback form-input if tailwind unavailable */
+    .form-input {
+      --tw-bg-opacity: 1;
+      width:100%;
+      padding:.75rem;
+      border-radius:.5rem;
+      border:1px solid rgba(156,163,175,.5);
+      background:#f8fafc;
+    }
+    .offline-badge { background:#f87171; color:white; }
+    .online-badge { background:#34d399; color:white; }
+
+    /* smooth theme transition for nicer switch */
+    :root, .dark {
+      transition: background-color 260ms ease, color 260ms ease;
+    }
+  </style>
+
+  <!--
+    Quick theme init to avoid flash: apply saved theme or system preference
+    This runs before the body is parsed so there is minimal flash.
+  -->
+  <script>
+    (function() {
+      try {
+        const saved = localStorage.getItem('theme'); // 'light' | 'dark' | null
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (saved === null && prefersDark)) {
+          document.documentElement.classList.add('dark');
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#111827');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#4f46e5');
+        }
+      } catch (e) {
+        console.warn('Theme init failed', e);
+      }
+    })();
+  </script>
+</head>
+
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans min-h-screen">
+  <div class="container mx-auto p-4 lg:p-8">
+    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-primary">📚 Daily Notes Link Saver (PWA)</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Save links, sync across devices, work offline.</p>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <span id="sync-indicator" class="px-3 py-1 rounded-full text-sm online-badge">Checking...</span>
+        <button id="manual-sync" class="px-3 py-1 rounded-lg bg-indigo-600 text-white">Sync Now</button>
+
+        <!-- Theme toggle -->
+        <button id="theme-toggle" aria-label="Toggle theme" title="Toggle light / dark theme"
+                class="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-offset-1">
+          <!-- label set by JS -->
+        </button>
+
+        <p id="user-id-display" class="text-xs text-gray-500"></p>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form -->
+      <div class="p-6 bg-white dark:bg-gray-800 rounded-xl shadow">
+        <h2 id="form-header" class="text-xl font-bold mb-4">Add New Note</h2>
+        <form id="note-form" class="space-y-3">
+          <input type="hidden" id="note-id" value="">
+          <div>
+            <label class="text-sm font-medium">Subject</label>
+            <input id="subject" list="subject-suggestions" class="form-input" placeholder="e.g., Data Structures" required />
+            <datalist id="subject-suggestions"></datalist>
+          </div>
+          <div>
+            <label class="text-sm font-medium">Title</label>
+            <input id="title" class="form-input" placeholder="Optional title" />
+          </div>
+          <div>
+            <label class="text-sm font-medium">URL</label>
+            <input id="url" type="url" class="form-input" placeholder="https://..." required />
+            <button type="button" id="ai-insight-button" class="mt-2 px-3 py-2 bg-purple-600 text-white rounded-lg w-full">✨ Get AI Title</button>
+          </div>
+
+          <div class="flex space-x-2">
+            <button id="save-button" class="flex-1 py-2 bg-primary text-white rounded-lg">💾 Save Note</button>
+            <button id="cancel-edit-button" type="button" class="hidden flex-1 py-2 bg-gray-200 rounded-lg text-gray-700">Cancel</button>
+          </div>
+
+          <p id="form-message" class="text-sm mt-2"></p>
+        </form>
+      </div>
+
+      <!-- Notes list -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="p-4 bg-white dark:bg-gray-800 rounded-xl shadow">
+          <h2 class="text-xl font-bold">All Saved Notes</h2>
+          <div class="flex gap-3 mt-3 flex-col sm:flex-row">
+            <input id="search-input" placeholder="Search..." class="form-input" />
+            <select id="filter-subject" class="form-input w-48"><option value="">All Subjects</option></select>
+            <select id="sort-by" class="form-input w-40">
+              <option value="date_desc">Newest First</option>
+              <option value="date_asc">Oldest First</option>
+              <option value="subject_asc">Subject (A-Z)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="notes-list" class="space-y-3">
+          <p id="loading-message" class="text-center py-8 text-gray-500">Starting up...</p>
+          <p id="no-notes-message" class="hidden text-center py-8 text-gray-500">No notes yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App script (modular ES6) -->
+  <script type="module">
+  // ===== app module =====
+  // NOTE: This script uses compat SDK loaded above, written in modular ES6 style.
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+  // DOM elements
+  const loadingMessage = document.getElementById('loading-message');
+  const noNotesMessage = document.getElementById('no-notes-message');
+  const notesList = document.getElementById('notes-list');
+  const subjectSuggestions = document.getElementById('subject-suggestions');
+  const filterSubject = document.getElementById('filter-subject');
+  const sortBy = document.getElementById('sort-by');
+  const searchInput = document.getElementById('search-input');
+  const saveButton = document.getElementById('save-button');
+  const cancelEditButton = document.getElementById('cancel-edit-button');
+  const formHeader = document.getElementById('form-header');
+  const aiButton = document.getElementById('ai-insight-button');
+  const titleInput = document.getElementById('title');
+  const urlInput = document.getElementById('url');
+  const manualSyncBtn = document.getElementById('manual-sync');
+  const syncIndicator = document.getElementById('sync-indicator');
+  const userIdDisplay = document.getElementById('user-id-display');
+  const themeToggleBtn = document.getElementById('theme-toggle');
+
+  let db = null;
+  let auth = null;
+  let userId = '';
+  let notesListenerUnsub = null;
+  let allNotes = [];
+  let allSubjects = new Set();
+  const LOCAL_KEY = 'daily_notes_local_v1'; // localStorage key
+  const SYNC_QUEUE_KEY = 'daily_notes_sync_queue_v1';
+
+  // ---------------------------
+  // THEME HANDLER
+  // ---------------------------
+  function applyTheme(theme) {
+    const metaTheme = document.querySelector("meta[name='theme-color']");
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+      themeToggleBtn.textContent = '☀️ Light';
+      if (metaTheme) metaTheme.setAttribute('content', '#111827');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+      themeToggleBtn.textContent = '🌙 Dark';
+      if (metaTheme) metaTheme.setAttribute('content', '#4f46e5');
+    }
+  }
+
+  // initialize toggle label
+  (function initThemeToggleLabel() {
+    try {
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const initial = saved || (prefersDark ? 'dark' : 'light');
+      applyTheme(initial);
+    } catch (e) { console.warn('Theme init error', e); }
+  })();
+
+  themeToggleBtn.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.contains('dark');
+    applyTheme(isDark ? 'light' : 'dark');
+  });
+
+  // ---------------------------
+  // firebase init (safe + modular)
+  // ---------------------------
+  if (Object.keys(firebaseConfig).length > 0) {
+    try {
+      const fbApp = firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore(fbApp);
+      auth = firebase.auth(fbApp);
+      console.log('Firebase initialized.');
+    } catch (err) {
+      console.error('Firebase initialization failed:', err);
+      db = null;
+      loadingMessage.textContent = 'Error: Firebase initialization failed.';
+    }
+  } else {
+    console.warn('Firebase configuration missing — working locally.');
+    db = null;
+    loadingMessage.textContent = 'Error: Firebase config missing. Cannot save notes to cloud; working locally.';
+  }
+
+  // ---------------------------
+  // Utility: display message
+  // ---------------------------
+  function displayMessage(msg, type='success') {
+    const el = document.getElementById('form-message');
+    el.textContent = msg;
+    el.className = 'text-sm mt-2 ' + (type === 'success' ? 'text-green-600' : (type === 'info' ? 'text-blue-500' : 'text-red-500'));
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+  }
+
+  // ---------------------------
+  // Local storage helpers
+  // ---------------------------
+  function loadLocalNotes() {
+    try {
+      const raw = localStorage.getItem(LOCAL_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw).map(n => ({ ...n, created_at: n.created_at ? new Date(n.created_at) : new Date() }));
+    } catch (e) {
+      console.error('Failed to parse local notes:', e);
+      return [];
+    }
+  }
+
+  function saveLocalNotes(notes) {
+    try {
+      const serializable = notes.map(n => ({ ...n, created_at: n.created_at instanceof Date ? n.created_at.toISOString() : n.created_at }));
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(serializable));
+    } catch (e) {
+      console.error('Failed to save local notes:', e);
+    }
+  }
+
+  function loadSyncQueue() {
+    try { return JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveSyncQueue(q) { localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q)); }
+
+  function mergeNotes(localNotes, cloudNotes) {
+    const map = new Map();
+    [...localNotes, ...cloudNotes].forEach(n => {
+      const id = n.id || n.local_id;
+      if (!id) return;
+      const prev = map.get(id);
+      if (!prev) { map.set(id, n); return; }
+      const prevT = prev.created_at ? (prev.created_at instanceof Date ? prev.created_at.getTime() : new Date(prev.created_at).getTime()) : 0;
+      const curT = n.created_at ? (n.created_at instanceof Date ? n.created_at.getTime() : new Date(n.created_at).getTime()) : 0;
+      if (curT >= prevT) map.set(id, n);
+    });
+    return Array.from(map.values());
+  }
+
+  // ---------------------------
+  // Firestore helpers (safe wrappers)
+  // ---------------------------
+  function getNotesCollectionRef(uid) {
+    if (!db) return null;
+    return db.collection(`artifacts/${appId}/users/${uid}/daily_notes`);
+  }
+
+  async function pushLocalQueueToServer(uid) {
+    if (!db) return;
+    const q = loadSyncQueue();
+    if (!q.length) return;
+    const col = getNotesCollectionRef(uid);
+    if (!col) return;
+
+    const remaining = [];
+    for (const item of q) {
+      try {
+        if (item.remoteId) {
+          await col.doc(item.remoteId).set({
+            subject: item.subject,
+            title: item.title,
+            url: item.url,
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            local_updated_at: item.local_updated_at || firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        } else {
+          const res = await col.add({
+            subject: item.subject,
+            title: item.title,
+            url: item.url,
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            local_updated_at: item.local_updated_at || firebase.firestore.FieldValue.serverTimestamp()
+          });
+          item.remoteId = res.id;
+        }
+      } catch (err) {
+        console.error('Push to server failed for item', item, err);
+        remaining.push(item);
+      }
+    }
+    saveSyncQueue(remaining);
+    if (!remaining.length) displayMessage('Local changes synced to cloud.', 'success');
+  }
+
+  // ---------------------------
+  // Real-time listener & merge
+  // ---------------------------
+  function setupNotesListener(uid) {
+    if (!db) return;
+    const col = getNotesCollectionRef(uid);
+    if (!col) return;
+
+    if (notesListenerUnsub) {
+      try { notesListenerUnsub(); } catch (e) {}
+      notesListenerUnsub = null;
+    }
+
+    notesListenerUnsub = col.onSnapshot(snapshot => {
+      const cloudNotes = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          subject: d.subject,
+          title: d.title,
+          url: d.url,
+          created_at: d.created_at ? d.created_at.toDate() : new Date(),
+          remote: true
+        };
+      });
+
+      const localNotes = loadLocalNotes();
+      const merged = mergeNotes(localNotes, cloudNotes);
+      saveLocalNotes(merged);
+
+      allNotes = merged;
+      allSubjects = new Set(allNotes.map(n => n.subject));
+      updateSubjectSuggestions();
+      updateSubjectFilter();
+      renderNotes();
+      loadingMessage.classList.add('hidden');
+    }, err => {
+      console.error('Snapshot error:', err);
+      loadingMessage.textContent = 'Error loading cloud notes.';
+      loadingMessage.classList.remove('hidden');
+    });
+  }
+
+  // ---------------------------
+  // Sync & periodic auto-backup
+  // ---------------------------
+  async function tryAutoSync() {
+    setSyncIndicator('syncing');
+    if (!db || !auth || !userId) {
+      setSyncIndicator(navigator.onLine ? 'online-local' : 'offline');
+      return;
+    }
+    try {
+      await pushLocalQueueToServer(userId);
+      setSyncIndicator('online');
+    } catch (e) {
+      console.error('Auto-sync failed', e);
+      setSyncIndicator('online-error');
+    }
+  }
+
+  setInterval(() => {
+    if (navigator.onLine && db && auth && userId) tryAutoSync();
+  }, 60_000);
+
+  // ---------------------------
+  // UI / rendering
+  // ---------------------------
+  function updateSubjectSuggestions() {
+    subjectSuggestions.innerHTML = '';
+    [...allSubjects].sort().forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      subjectSuggestions.appendChild(opt);
+    });
+  }
+  function updateSubjectFilter() {
+    const current = filterSubject.value;
+    filterSubject.innerHTML = '<option value="">All Subjects</option>';
+    [...allSubjects].sort().forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      filterSubject.appendChild(opt);
+    });
+    filterSubject.value = current;
+  }
+
+  function renderNotes() {
+    const filterVal = filterSubject.value;
+    const searchVal = searchInput.value.trim().toLowerCase();
+    const sortVal = sortBy.value;
+
+    let filtered = allNotes.filter(n => {
+      const subjectMatch = !filterVal || n.subject === filterVal;
+      const searchMatch = !searchVal || (n.subject && n.subject.toLowerCase().includes(searchVal)) || (n.title && n.title.toLowerCase().includes(searchVal));
+      return subjectMatch && searchMatch;
+    });
+
+    filtered.sort((a,b) => {
+      if (sortVal === 'subject_asc') return (a.subject||'').localeCompare(b.subject||'');
+      const ta = a.created_at ? a.created_at.getTime() : 0;
+      const tb = b.created_at ? b.created_at.getTime() : 0;
+      return sortVal === 'date_asc' ? ta - tb : tb - ta;
+    });
+
+    notesList.innerHTML = '';
+    if (!filtered.length) {
+      noNotesMessage.classList.remove('hidden');
+      return;
+    }
+    noNotesMessage.classList.add('hidden');
+
+    filtered.forEach(n => {
+      const node = document.createElement('div');
+      node.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow flex justify-between items-start';
+      const left = document.createElement('div');
+      left.innerHTML = `
+        <div class="text-sm font-semibold text-indigo-600">${escapeHtml(n.subject)}</div>
+        <div class="text-lg font-bold"><a href="${escapeHtml(n.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.title || 'No Title')}</a></div>
+        <div class="text-xs text-gray-500 mt-1">Saved: ${n.created_at.toLocaleString()}</div>
+      `;
+      const right = document.createElement('div');
+      right.innerHTML = `
+        <button class="mr-2 edit-btn">✏️</button>
+        <button class="del-btn">🗑️</button>
+      `;
+      node.appendChild(left);
+      node.appendChild(right);
+
+      right.querySelector('.del-btn').addEventListener('click', () => deleteNote(n));
+      right.querySelector('.edit-btn').addEventListener('click', () => startEditNote(n));
+      notesList.appendChild(node);
+    });
+  }
+
+  function escapeHtml(s='') {
+    return (''+s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---------------------------
+  // CRUD (local-first, then cloud)
+  // ---------------------------
+  async function saveNoteFromForm(e) {
+    e && e.preventDefault();
+    const subject = document.getElementById('subject').value.trim();
+    const title = titleInput.value.trim() || 'No Title';
+    let url = urlInput.value.trim();
+
+    if (!subject || !url) {
+      displayMessage('Subject and URL required.', 'error');
+      return;
+    }
+    if (!url.match(/^https?:\/\//)) url = 'https://' + url;
+
+    const editingId = document.getElementById('note-id').value || null;
+
+    const note = {
+      subject,
+      title,
+      url,
+      local_id: editingId || cryptoRandomId(),
+      created_at: new Date(),
+      local_updated_at: new Date()
+    };
+
+    let localNotes = loadLocalNotes();
+
+    if (editingId) {
+      localNotes = localNotes.map(n => (n.local_id === editingId || n.id === editingId) ? { ...n, subject, title, url, local_updated_at: note.local_updated_at } : n);
+    } else {
+      localNotes.unshift(note);
+    }
+    saveLocalNotes(localNotes);
+    allNotes = localNotes;
+    allSubjects = new Set(allNotes.map(n => n.subject));
+    updateSubjectSuggestions();
+    updateSubjectFilter();
+    renderNotes();
+
+    // Add to sync queue
+    const q = loadSyncQueue();
+    const existingLocal = q.find(x => x.local_id === note.local_id);
+    if (existingLocal) {
+      existingLocal.subject = note.subject;
+      existingLocal.title = note.title;
+      existingLocal.url = note.url;
+      existingLocal.local_updated_at = note.local_updated_at.toISOString();
+    } else {
+      q.push({
+        local_id: note.local_id,
+        subject: note.subject,
+        title: note.title,
+        url: note.url,
+        local_updated_at: note.local_updated_at.toISOString(),
+        remoteId: null
+      });
+    }
+    saveSyncQueue(q);
+
+    resetForm();
+    displayMessage('Saved locally. Will sync when online.', 'success');
+
+    if (navigator.onLine && db && auth && userId) {
+      try { await tryAutoSync(); } catch(e){ console.warn('Immediate sync failed', e); }
+    }
+  }
+
+  async function deleteNote(note) {
+    if (!confirm('Delete this note?')) return;
+    let localNotes = loadLocalNotes().filter(n => !(n.local_id === note.local_id || n.id === note.id));
+    saveLocalNotes(localNotes);
+    allNotes = localNotes;
+    renderNotes();
+
+    if (note.id && db && userId) {
+      try {
+        await getNotesCollectionRef(userId).doc(note.id).delete();
+        displayMessage('Deleted from cloud.', 'success');
+      } catch (err) {
+        console.error('Cloud delete failed, queueing', err);
+        const q = loadSyncQueue();
+        q.push({ action: 'delete', remoteId: note.id, local_id: note.local_id });
+        saveSyncQueue(q);
+      }
+    } else {
+      const q = loadSyncQueue().filter(i => i.local_id !== note.local_id);
+      saveSyncQueue(q);
+    }
+  }
+
+  function startEditNote(n) {
+    document.getElementById('note-id').value = n.id || n.local_id;
+    document.getElementById('subject').value = n.subject;
+    titleInput.value = n.title === 'No Title' ? '' : n.title;
+    urlInput.value = n.url;
+    saveButton.textContent = '✅ Update Note';
+    cancelEditButton.classList.remove('hidden');
+    formHeader.textContent = 'Edit Note';
+  }
+
+  function resetForm() {
+    document.getElementById('note-id').value = '';
+    document.getElementById('note-form').reset();
+    saveButton.textContent = '💾 Save Note';
+    cancelEditButton.classList.add('hidden');
+    formHeader.textContent = 'Add New Note';
+  }
+  cancelEditButton.addEventListener('click', resetForm);
+
+  function cryptoRandomId() {
+    return 'l_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+  }
+
+  // ---------------------------
+  // Online/offline indicator
+  // ---------------------------
+  function setSyncIndicator(state) {
+    switch(state) {
+      case 'offline':
+        syncIndicator.textContent = 'Offline';
+        syncIndicator.className = 'px-3 py-1 rounded-full text-sm offline-badge';
+        break;
+      case 'syncing':
+        syncIndicator.textContent = 'Syncing…';
+        syncIndicator.className = 'px-3 py-1 rounded-full text-sm bg-yellow-400';
+        break;
+      case 'online':
+        syncIndicator.textContent = 'Online & Synced';
+        syncIndicator.className = 'px-3 py-1 rounded-full text-sm online-badge';
+        break;
+      case 'online-local':
+        syncIndicator.textContent = 'Online (Local only)';
+        syncIndicator.className = 'px-3 py-1 rounded-full text-sm bg-orange-500';
+        break;
+      default:
+        syncIndicator.textContent = 'Idle';
+        syncIndicator.className = 'px-3 py-1 rounded-full text-sm online-badge';
+    }
+  }
+
+  window.addEventListener('online', async () => {
+    setSyncIndicator('syncing');
+    if (db && auth && userId) {
+      try { await tryAutoSync(); } catch(e){ console.warn(e); }
+    } else {
+      setSyncIndicator('online-local');
+    }
+  });
+  window.addEventListener('offline', () => setSyncIndicator('offline'));
+
+  // ---------------------------
+  // Authentication + startup
+  // ---------------------------
+  async function setupAuthAndData() {
+    allNotes = loadLocalNotes();
+    allSubjects = new Set(allNotes.map(n => n.subject));
+    updateSubjectSuggestions();
+    updateSubjectFilter();
+    renderNotes();
+
+    if (!db) {
+      setSyncIndicator(navigator.onLine ? 'online-local' : 'offline');
+      loadingMessage.classList.add('hidden');
+      return;
+    }
+    try {
+      if (initialAuthToken) {
+        await auth.signInWithCustomToken(initialAuthToken);
+      } else {
+        await auth.signInAnonymously();
+      }
+      userId = auth.currentUser.uid;
+      userIdDisplay.textContent = `User ID: ${userId}`;
+
+      await pushLocalQueueToServer(userId);
+      setupNotesListener(userId);
+      setSyncIndicator('online');
+    } catch (err) {
+      console.error('Auth or initial sync failed:', err);
+      setSyncIndicator('online-local');
+      loadingMessage.textContent = 'Authentication failed: using local only.';
+      loadingMessage.classList.remove('hidden');
+    }
+  }
+
+  manualSyncBtn.addEventListener('click', async () => {
+    manualSyncBtn.disabled = true;
+    setSyncIndicator('syncing');
+    try {
+      if (db && userId) {
+        await tryAutoSync();
+      } else {
+        displayMessage('Cloud not configured. Local only.', 'info');
+      }
+    } catch (e) {
+      console.error(e);
+      displayMessage('Manual sync failed.', 'error');
+    } finally {
+      manualSyncBtn.disabled = false;
+    }
+  });
+
+  aiButton.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) return displayMessage('Enter URL first to get AI suggestion.', 'error');
+    aiButton.disabled = true;
+    aiButton.textContent = 'Analyzing…';
+    try {
+      const parsed = new URL(url);
+      const guess = parsed.hostname.replace('www.','') + ' — ' + (parsed.pathname === '/' ? 'Homepage' : parsed.pathname.split('/').slice(-1)[0].replace(/[-_]/g,' '));
+      titleInput.value = guess.slice(0, 60);
+      displayMessage('AI suggestion applied (local heuristic).', 'success');
+    } catch (e) {
+      displayMessage('Invalid URL for AI suggestion.', 'error');
+    } finally {
+      aiButton.disabled = false;
+      aiButton.textContent = '✨ Get AI Title';
+    }
+  });
+
+  document.getElementById('note-form').addEventListener('submit', saveNoteFromForm);
+  filterSubject.addEventListener('change', renderNotes);
+  sortBy.addEventListener('change', renderNotes);
+  searchInput.addEventListener('input', renderNotes);
+
+  // start app
+  window.addEventListener('load', () => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(() => console.log('SW registered')).catch(e => console.warn('SW registration failed', e));
+    }
+    setupAuthAndData();
+    setSyncIndicator(navigator.onLine ? 'online' : 'offline');
+  });
+
+  </script>
+</body>
+</html>
+
