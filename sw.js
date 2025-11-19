@@ -1,71 +1,70 @@
-const CACHE_NAME = "notes-app-shell-v1";
+/* ================================
+   Service Worker — Daily Notes Link Saver (PWA)
+   Offline-first, cache-first for static files,
+   network-first fallback for dynamic requests.
+================================ */
 
-const PRECACHE_URLS = [
+const CACHE_NAME = "notes-app-cache-v1";
+
+const STATIC_ASSETS = [
   "/",
   "/index.html",
   "/manifest.json",
-  // Add icons
   "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/icon-512.png"
 ];
 
-// Install → Precache App Shell
+/* INSTALL — Pre-cache essential app shell */
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
 });
 
-// Activate → Clear Old Caches
+/* ACTIVATE — Clean old caches */
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.map((key) => (key !== CACHE_NAME ? caches.delete(key) : null))
-        )
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.map((key) => (key !== CACHE_NAME ? caches.delete(key) : null))
       )
+    )
   );
   self.clients.claim();
 });
 
-// Helper → Check if it's a static asset
-function isStaticRequest(req) {
+/* HELPER — Check if request is a static file */
+function isStatic(req) {
   const url = new URL(req.url);
-
   return (
     url.origin === location.origin &&
-    (url.pathname === "/" ||
+    (STATIC_ASSETS.includes(url.pathname) ||
       url.pathname.endsWith(".html") ||
-      url.pathname.endsWith(".css") ||
       url.pathname.endsWith(".js") ||
+      url.pathname.endsWith(".css") ||
       url.pathname.endsWith(".png") ||
       url.pathname.endsWith(".jpg") ||
-      url.pathname.endsWith(".svg") ||
-      url.pathname.startsWith("/icons/"))
+      url.pathname.endsWith(".svg"))
   );
 }
 
-// Fetch → Cache-first for static assets, network-first for others
+/* FETCH — Cache-first for static, network-first for dynamic */
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
-  // Only handle GET requests
   if (req.method !== "GET") return;
 
-  // Cache-first strategy for static assets
-  if (isStaticRequest(req)) {
+  // Cache-first for static assets
+  if (isStatic(req)) {
     event.respondWith(
       caches.match(req).then((cached) => {
         if (cached) return cached;
 
         return fetch(req)
           .then((resp) => {
-            const respClone = resp.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(req, respClone);
+              cache.put(req, resp.clone());
             });
             return resp;
           })
@@ -75,14 +74,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first strategy for all other GETs (e.g., Firebase)
+  // Network-first for all other requests
   event.respondWith(
     fetch(req)
       .then((resp) => resp)
-      .catch(() =>
-        caches
-          .match(req)
-          .then((cached) => cached || caches.match("/index.html"))
-      )
+      .catch(() => caches.match(req).then((c) => c || caches.match("/index.html")))
   );
 });
