@@ -2,9 +2,13 @@
   "name": "Daily Notes Link Saver",
   "short_name": "NotesSaver",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
+
   "background_color": "#ffffff",
   "theme_color": "#4f46e5",
+
   "icons": [
     {
       "src": "/icons/icon-192.png",
