@@ -155,10 +155,18 @@
             auth = firebase.auth(app);
         } else {
             console.error("Firebase configuration is missing.");
-            document.getElementById('loading-message').textContent = 'Error: Firebase config missing.';
+            // We set db to null explicitly to ensure checks work correctly later
+            db = null; 
+            document.getElementById('loading-message').textContent = 'Error: Firebase config missing. Cannot save notes.';
         }
 
-        const getNotesCollection = () => db.collection(`artifacts/${appId}/users/${userId}/daily_notes`);
+        const getNotesCollection = () => {
+            if (!db) {
+                // FIX: Corrected the object literal syntax on this single line by adding the final '})'
+                return { collection: () => ({ doc: () => ({ update: () => Promise.reject(new Error("Database not initialized.")), delete: () => Promise.reject(new Error("Database not initialized.")) }), add: () => Promise.reject(new Error("Database not initialized.")), onSnapshot: () => console.error("Database listener not set up because DB is null.") }) };
+            }
+            return db.collection(`artifacts/${appId}/users/${userId}/daily_notes`);
+        };
         
         // --- GLOBAL STATE & DOM ELEMENTS ---
         let allNotes = [];
@@ -199,6 +207,11 @@
          * Uses Gemini and Google Search grounding to analyze a URL and suggest a concise title.
          */
         const generateNoteSummary = async () => {
+            if (!db) {
+                displayMessage('Database not available. Cannot use AI features.', 'error');
+                return;
+            }
+
             let url = urlInput.value.trim();
 
             if (!url) {
@@ -285,6 +298,12 @@
          */
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            // FIX: Ensure DB is initialized before attempting to save
+            if (!db) {
+                displayMessage('Failed to save note. Database is not initialized.', 'error');
+                return;
+            }
             
             const noteId = document.getElementById('note-id').value;
             const subject = document.getElementById('subject').value.trim();
@@ -324,7 +343,7 @@
                 resetForm();
             } catch (error) {
                 console.error("Error saving note: ", error);
-                displayMessage(`Failed to save note. ${error.message}`, 'error');
+                displayMessage(`Failed to save note: ${error.message}`, 'error');
             }
         });
 
@@ -332,6 +351,10 @@
          * Delete a note (DELETE /notes/:id)
          */
         window.deleteNote = async (id) => {
+             if (!db) {
+                displayMessage('Failed to delete note. Database is not initialized.', 'error');
+                return;
+            }
             if (!confirm("Are you sure you want to delete this note?")) return;
             try {
                 await getNotesCollection().doc(id).delete();
@@ -383,6 +406,8 @@
          * Fetches data in real-time and triggers rendering
          */
         const setupNotesListener = () => {
+             if (!db) return; // Prevent listener setup if DB is null
+
             // Real-time listener: Fetches data, updates on change
             getNotesCollection().onSnapshot(snapshot => {
                 loadingMessage.classList.add('hidden'); // Use cached element
@@ -550,6 +575,9 @@
         window.onload = () => {
             if (db) {
                 setupAuth();
+            } else {
+                 // If Firebase initialization failed earlier (db is null), show the error immediately
+                 document.getElementById('loading-message').textContent = 'Error: Database configuration is missing or invalid. Please refresh.';
             }
         };
 
