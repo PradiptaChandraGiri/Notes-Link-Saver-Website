@@ -8,50 +8,85 @@
   <!-- PWA manifest -->
   <link rel="manifest" href="/manifest.json" />
 
-  <!-- Theme color (will be updated by JS) -->
+  <!-- Theme color (updated by JS on init / toggle) -->
   <meta name="theme-color" content="#4f46e5" />
 
-  <!-- Tailwind CDN -->
+  <!-- Tailwind CDN (quick styling) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Firebase compat -->
+  <!-- Firebase compat (for easier Firestore usage in this example) -->
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
 
   <style>
-    /* small scrollbar style */
+    /* small scrollbar */
     body::-webkit-scrollbar { width: 8px; }
-    /* fallback form-input if tailwind unavailable */
-    .form-input {
-      --tw-bg-opacity: 1;
-      width:100%;
-      padding:.75rem;
-      border-radius:.5rem;
-      border:1px solid rgba(156,163,175,.5);
-      background:#f8fafc;
-    }
-    .offline-badge { background:#f87171; color:white; }
-    .online-badge { background:#34d399; color:white; }
 
-    /* smooth theme transition for nicer switch */
+    /* Default (light) input style */
+    .form-input {
+      width: 100%;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgba(156,163,175,.5);
+      background: #f8fafc;      /* light background */
+      color: #111827;           /* dark text */
+      outline: none;
+      transition: background-color .18s ease, color .18s ease, border-color .18s ease;
+    }
+    .form-input:focus {
+      border-color: rgba(79,70,229,0.9); /* indigo focus */
+      box-shadow: 0 0 0 3px rgba(79,70,229,0.08);
+    }
+
+    /* Dark mode inputs (when .dark is on documentElement) */
+    .dark .form-input {
+      background: #111827;     /* dark background */
+      border-color: #374151;
+      color: #f9fafb;          /* light text */
+    }
+    .form-input::placeholder {
+      color: #9ca3af;
+    }
+    .dark .form-input::placeholder {
+      color: #9ca3af;
+    }
+
+    /* sync badges */
+    .offline-badge { background:#ef4444; color:white; }
+    .online-badge { background:#10b981; color:white; }
+
+    /* smooth theme transitions */
     :root, .dark {
-      transition: background-color 260ms ease, color 260ms ease;
+      transition: background-color 220ms ease, color 220ms ease;
+    }
+
+    /* small card styling for header buttons in dark */
+    .theme-btn {
+      display:inline-flex;
+      align-items:center;
+      gap:.5rem;
+    }
+
+    /* make sure datalist options are readable in dark (browser-specific) */
+    ::-webkit-calendar-picker-indicator { filter: invert(0.9); }
+
+    /* Responsive small tweaks */
+    @media (max-width: 640px) {
+      .container { padding-left: 1rem; padding-right: 1rem; }
     }
   </style>
 
-  <!--
-    Quick theme init to avoid flash: apply saved theme or system preference
-    This runs before the body is parsed so there is minimal flash.
-  -->
+  <!-- Quick theme initialization (avoid flash). Runs before body parse finishes. -->
   <script>
     (function() {
       try {
         const saved = localStorage.getItem('theme'); // 'light' | 'dark' | null
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (saved === 'dark' || (saved === null && prefersDark)) {
+        const useDark = (saved === 'dark') || (saved === null && prefersDark);
+        if (useDark) {
           document.documentElement.classList.add('dark');
-          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#111827');
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0b1220');
         } else {
           document.documentElement.classList.remove('dark');
           document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#4f46e5');
@@ -62,26 +97,27 @@
     })();
   </script>
 </head>
-
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans min-h-screen">
   <div class="container mx-auto p-4 lg:p-8">
     <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
       <div>
-        <h1 class="text-3xl font-extrabold text-primary">📚 Daily Notes Link Saver (PWA)</h1>
+        <h1 class="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400">📚 Daily Notes Link Saver (PWA)</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Save links, sync across devices, work offline.</p>
       </div>
 
       <div class="flex items-center space-x-3">
         <span id="sync-indicator" class="px-3 py-1 rounded-full text-sm online-badge">Checking...</span>
-        <button id="manual-sync" class="px-3 py-1 rounded-lg bg-indigo-600 text-white">Sync Now</button>
+        <button id="manual-sync" class="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Sync Now</button>
 
         <!-- Theme toggle -->
-        <button id="theme-toggle" aria-label="Toggle theme" title="Toggle light / dark theme"
-                class="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-offset-1">
-          <!-- label set by JS -->
+        <button id="theme-toggle"
+                aria-label="Toggle theme"
+                title="Toggle light / dark theme"
+                class="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-offset-1 theme-btn">
+          <!-- content set by JS -->
         </button>
 
-        <p id="user-id-display" class="text-xs text-gray-500"></p>
+        <p id="user-id-display" class="text-xs text-gray-500 dark:text-gray-400"></p>
       </div>
     </header>
 
@@ -89,25 +125,29 @@
       <!-- Form -->
       <div class="p-6 bg-white dark:bg-gray-800 rounded-xl shadow">
         <h2 id="form-header" class="text-xl font-bold mb-4">Add New Note</h2>
+
         <form id="note-form" class="space-y-3">
           <input type="hidden" id="note-id" value="">
+
           <div>
-            <label class="text-sm font-medium">Subject</label>
+            <label class="text-sm font-medium block mb-1">Subject</label>
             <input id="subject" list="subject-suggestions" class="form-input" placeholder="e.g., Data Structures" required />
             <datalist id="subject-suggestions"></datalist>
           </div>
+
           <div>
-            <label class="text-sm font-medium">Title</label>
+            <label class="text-sm font-medium block mb-1">Title</label>
             <input id="title" class="form-input" placeholder="Optional title" />
           </div>
+
           <div>
-            <label class="text-sm font-medium">URL</label>
+            <label class="text-sm font-medium block mb-1">URL</label>
             <input id="url" type="url" class="form-input" placeholder="https://..." required />
-            <button type="button" id="ai-insight-button" class="mt-2 px-3 py-2 bg-purple-600 text-white rounded-lg w-full">✨ Get AI Title</button>
+            <button type="button" id="ai-insight-button" class="mt-2 px-3 py-2 bg-purple-600 text-white rounded-lg w-full hover:bg-purple-700">✨ Get AI Title</button>
           </div>
 
           <div class="flex space-x-2">
-            <button id="save-button" class="flex-1 py-2 bg-primary text-white rounded-lg">💾 Save Note</button>
+            <button id="save-button" type="submit" class="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">💾 Save Note</button>
             <button id="cancel-edit-button" type="button" class="hidden flex-1 py-2 bg-gray-200 rounded-lg text-gray-700">Cancel</button>
           </div>
 
@@ -141,7 +181,8 @@
   <!-- App script (modular ES6) -->
   <script type="module">
   // ===== app module =====
-  // NOTE: This script uses compat SDK loaded above, written in modular ES6 style.
+  // NOTE: This script uses compat SDK loaded by <script> tags above but is written in modular ES6 style.
+  // Replace __firebase_config at runtime with a JSON string from your host/environment if available.
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
   const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
   const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -182,17 +223,17 @@
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
-      themeToggleBtn.textContent = '☀️ Light';
-      if (metaTheme) metaTheme.setAttribute('content', '#111827');
+      themeToggleBtn.innerHTML = '☀️ Light';
+      if (metaTheme) metaTheme.setAttribute('content', '#0b1220');
     } else {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
-      themeToggleBtn.textContent = '🌙 Dark';
+      themeToggleBtn.innerHTML = '🌙 Dark';
       if (metaTheme) metaTheme.setAttribute('content', '#4f46e5');
     }
   }
 
-  // initialize toggle label
+  // initialize theme toggle label
   (function initThemeToggleLabel() {
     try {
       const saved = localStorage.getItem('theme');
@@ -265,6 +306,7 @@
   }
   function saveSyncQueue(q) { localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q)); }
 
+  // Merge strategy: newest timestamp wins
   function mergeNotes(localNotes, cloudNotes) {
     const map = new Map();
     [...localNotes, ...cloudNotes].forEach(n => {
@@ -444,7 +486,7 @@
       left.innerHTML = `
         <div class="text-sm font-semibold text-indigo-600">${escapeHtml(n.subject)}</div>
         <div class="text-lg font-bold"><a href="${escapeHtml(n.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.title || 'No Title')}</a></div>
-        <div class="text-xs text-gray-500 mt-1">Saved: ${n.created_at.toLocaleString()}</div>
+        <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Saved: ${n.created_at.toLocaleString()}</div>
       `;
       const right = document.createElement('div');
       right.innerHTML = `
@@ -667,6 +709,9 @@
     }
   });
 
+  // ---------------------------
+  // small AI placeholder (no API key)
+  // ---------------------------
   aiButton.addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) return displayMessage('Enter URL first to get AI suggestion.', 'error');
